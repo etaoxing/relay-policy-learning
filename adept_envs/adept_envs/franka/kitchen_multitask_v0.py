@@ -22,6 +22,16 @@ from adept_envs.utils.configurable import configurable
 from gym import spaces
 from dm_control.mujoco import engine
 
+CAMERAS = {
+    0: dict(distance=4.5, azimuth=-66, elevation=-65),
+    1: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=70, elevation=-35), # as in https://relay-policy-learning.github.io/
+    2: dict(distance=2.65, lookat=[0, 0, 2.], azimuth=90, elevation=-60), # similar to appendix D of https://arxiv.org/pdf/1910.11956.pdf
+    3: dict(distance=2.5, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-60), # 3-6 are first person views at different angles and distances
+    4: dict(distance=2.5, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-45), # problem w/ POV is that the knobs can be hidden by the hinge drawer and arm
+    5: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-45),
+    6: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-10),
+}
+
 @configurable(pickleable=True)
 class KitchenV0(robot_env.RobotEnv):
 
@@ -33,15 +43,16 @@ class KitchenV0(robot_env.RobotEnv):
     ROBOTS = {'robot': 'adept_envs.franka.robot.franka_robot:Robot_VelAct'}
     MODEl = os.path.join(
         os.path.dirname(__file__),
-        '../franka/assets/franka_kitchen_jntpos_act_ab.xml')
+        'assets/franka_kitchen_jntpos_act_ab.xml')
     N_DOF_ROBOT = 9
     N_DOF_OBJECT = 21
 
-    def __init__(self, robot_params={}, frame_skip=40):
-        self.goal_concat = True
+    def __init__(self, robot_params={}, frame_skip=40, camera_id=1):
+        # self.goal_concat = True
+        # self.goal = np.zeros((30,))
         self.obs_dict = {}
         self.robot_noise_ratio = 0.1  # 10% as per robot_config specs
-        self.goal = np.zeros((30,))
+        self.camera_id = camera_id
 
         super().__init__(
             self.MODEl,
@@ -50,11 +61,7 @@ class KitchenV0(robot_env.RobotEnv):
                 n_obj=self.N_DOF_OBJECT,
                 **robot_params),
             frame_skip=frame_skip,
-            camera_settings=dict(
-                distance=4.5,
-                azimuth=-66,
-                elevation=-65,
-            ),
+            camera_settings=CAMERAS[camera_id],
         )
         self.init_qpos = self.sim.model.key_qpos[0].copy()
 
@@ -89,8 +96,8 @@ class KitchenV0(robot_env.RobotEnv):
 
         if not self.initializing:
             a = self.act_mid + a * self.act_amp  # mean center and scale
-        else:
-            self.goal = self._get_task_goal()  # update goal if init
+        # else:
+        #     self.goal = self._get_task_goal()  # update goal if init
 
         self.robot.step(
             self, a, step_duration=self.skip * self.model.opt.timestep)
@@ -106,11 +113,11 @@ class KitchenV0(robot_env.RobotEnv):
 
         # finalize step
         env_info = {
-            'time': self.obs_dict['t'],
+            # 'time': self.obs_dict['t'],
             'obs_dict': self.obs_dict,
-            'rewards': reward_dict,
-            'score': score,
-            'images': np.asarray(self.render(mode='rgb_array'))
+            # 'rewards': reward_dict,
+            # 'score': score,
+            # 'images': np.asarray(self.render(mode='rgb_array'))
         }
         # self.render()
         return obs, reward_dict['r_total'], done, env_info
@@ -125,16 +132,17 @@ class KitchenV0(robot_env.RobotEnv):
         self.obs_dict['qv'] = qv
         self.obs_dict['obj_qp'] = obj_qp
         self.obs_dict['obj_qv'] = obj_qv
-        self.obs_dict['goal'] = self.goal
-        if self.goal_concat:
-            return np.concatenate([self.obs_dict['qp'], self.obs_dict['obj_qp'], self.obs_dict['goal']])
+        # self.obs_dict['goal'] = self.goal
+        # if self.goal_concat:
+        #     return np.concatenate([self.obs_dict['qp'], self.obs_dict['obj_qp'], self.obs_dict['goal']])
+        return np.concatenate([self.obs_dict['qp'], self.obs_dict['obj_qp']])
 
     def reset_model(self):
         reset_pos = self.init_qpos[:].copy()
         reset_vel = self.init_qvel[:].copy()
         self.robot.reset(self, reset_pos, reset_vel)
         self.sim.forward()
-        self.goal = self._get_task_goal()  #sample a new goal on reset
+        # self.goal = self._get_task_goal()  #sample a new goal on reset
         return self._get_obs()
 
     def evaluate_success(self, paths):
@@ -158,18 +166,18 @@ class KitchenV0(robot_env.RobotEnv):
     def close_env(self):
         self.robot.close()
 
-    def set_goal(self, goal):
-        self.goal = goal
+    # def set_goal(self, goal):
+    #     self.goal = goal
 
-    def _get_task_goal(self):
-        return self.goal
+    # def _get_task_goal(self):
+    #     return self.goal
 
-    # Only include goal
-    @property
-    def goal_space(self):
-        len_obs = self.observation_space.low.shape[0]
-        env_lim = np.abs(self.observation_space.low[0])
-        return spaces.Box(low=-env_lim, high=env_lim, shape=(len_obs//2,))
+    # # Only include goal
+    # @property
+    # def goal_space(self):
+    #     len_obs = self.observation_space.low.shape[0]
+    #     env_lim = np.abs(self.observation_space.low[0])
+    #     return spaces.Box(low=-env_lim, high=env_lim, shape=(len_obs//2,))
 
     def convert_to_active_observation(self, observation):
         return observation
@@ -177,8 +185,8 @@ class KitchenV0(robot_env.RobotEnv):
 class KitchenTaskRelaxV1(KitchenV0):
     """Kitchen environment with proper camera and goal setup"""
 
-    def __init__(self):
-        super(KitchenTaskRelaxV1, self).__init__()
+    def __init__(self, **kwargs):
+        super(KitchenTaskRelaxV1, self).__init__(**kwargs)
 
     def _get_reward_n_score(self, obs_dict):
         reward_dict = {}
@@ -188,10 +196,11 @@ class KitchenTaskRelaxV1(KitchenV0):
         score = 0.
         return reward_dict, score
 
-    def render(self, mode='human'):
+    def render(self, mode='human', camera_id=None, height=1920, width=2560):
         if mode =='rgb_array':
-            camera = engine.MovableCamera(self.sim, 1920, 2560)
-            camera.set_pose(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=70, elevation=-35)
+            if camera_id is None: camera_id = self.camera_id
+            camera = engine.MovableCamera(self.sim, height=height, width=width)
+            camera.set_pose(**CAMERAS[camera_id])
             img = camera.render()
             return img
         else:
