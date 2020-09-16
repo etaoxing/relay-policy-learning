@@ -75,7 +75,8 @@ class MujocoEnv(gym.Env):
 
         self.init_qpos = self.data.qpos.ravel().copy()
         self.init_qvel = self.data.qvel.ravel().copy()
-        observation, _reward, done, _info = self.step(np.zeros(self.model.nu))
+        # observation, _reward, done, _info = self.step(np.zeros(self.model.nu))
+        observation, _reward, done, _info = self.step(np.zeros(9))
         assert not done
 
         bounds = self.model.actuator_ctrlrange.copy()

@@ -175,17 +175,20 @@ class Robot(base_robot.BaseRobot):
 
 
     # step the robot env
-    def step(self, env, ctrl_desired, step_duration, sim_override=False):
+    def step(self, env, ctrl_desired, step_duration, sim_override=False, enforce_limits=True):
 
         # Populate observation cache during startup
         if env.initializing:
             self._observation_cache_refresh(env)
 
-        # enforce velocity limits
-        ctrl_feasible = self.ctrl_velocity_limits(ctrl_desired, step_duration)
+        if enforce_limits:
+            # enforce velocity limits
+            ctrl_feasible = self.ctrl_velocity_limits(ctrl_desired, step_duration)
 
-        # enforce position limits
-        ctrl_feasible = self.ctrl_position_limits(ctrl_feasible)
+            # enforce position limits
+            ctrl_feasible = self.ctrl_position_limits(ctrl_feasible)
+        else:
+            ctrl_feasible = ctrl_desired
 
         # Send controls to the robot
         if self.is_hardware and (not sim_override):
