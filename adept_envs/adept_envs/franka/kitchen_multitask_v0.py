@@ -52,14 +52,14 @@ class KitchenV0(robot_env.RobotEnv):
     N_DOF_ROBOT = 9
     N_DOF_OBJECT = 21
 
-    def __init__(self, robot_params={}, frame_skip=40, camera_id=1, use_mocap_ctrl=False, mocap_use_euler=False):
+    def __init__(self, robot_params={}, frame_skip=40, camera_id=1, use_mocap_ctrl=False, rot_use_euler=False):
         # self.goal_concat = True
         # self.goal = np.zeros((30,))
         self.obs_dict = {}
         self.robot_noise_ratio = 0.1  # 10% as per robot_config specs
         self.camera_id = camera_id
         self.use_mocap_ctrl = use_mocap_ctrl
-        self.mocap_use_euler = mocap_use_euler
+        self.rot_use_euler = rot_use_euler
 
         self.pos_range = 0.05 # limit maximum change in position
         self.rot_range = 0.05
@@ -87,7 +87,7 @@ class KitchenV0(robot_env.RobotEnv):
 
         self.init_qvel = self.sim.model.key_qvel[0].copy()
 
-        action_dim = 8 if self.use_mocap_ctrl and self.mocap_use_euler else self.N_DOF_ROBOT
+        action_dim = 8 if self.use_mocap_ctrl and self.rot_use_euler else self.N_DOF_ROBOT
         self.act_mid = np.zeros(action_dim)
         self.act_amp = 2.0 * np.ones(action_dim)
         act_lower = -1*np.ones((action_dim,))
@@ -137,7 +137,7 @@ class KitchenV0(robot_env.RobotEnv):
         new_pos = current_pos + a[:3] * self.pos_range
         self.sim.data.mocap_pos[:] = new_pos.copy()
 
-        if self.mocap_use_euler:
+        if self.rot_use_euler:
             current_quat = self.sim.data.mocap_quat.copy()
             current_rot = quat2euler(current_quat) 
             new_rot = current_rot + a[3:6] * self.rot_range
@@ -193,19 +193,19 @@ class KitchenV0(robot_env.RobotEnv):
         #     return np.concatenate([self.obs_dict['qp'], self.obs_dict['obj_qp'], self.obs_dict['goal']])
         return np.concatenate([self.obs_dict['qp'], self.obs_dict['obj_qp']])
 
-    def get_obs_mocap(self): # should in in global coordinates
+    def get_obs_ee(self): # should in in global coordinates
         i = self.sim.model.site_name2id('end_effector')
         pos = self.sim.data.site_xpos[i, ...]
         xmat = self.sim.data.site_xmat[i, ...]
         xmat = xmat.reshape(3, 3)
-        if self.mocap_use_euler:
+        if self.rot_use_euler:
             rot = mat2euler(xmat)
         else:
             rot = mat2quat(xmat)
 
         # i = self.sim.model.body_name2id('panda0_link7')
         # pos = self.sim.data.body_xpos[i, ...]
-        # if self.mocap_use_euler:
+        # if self.rot_use_euler:
         #     xmat = self.sim.data.body_xmat[i, ...]
         #     xmat = xmat.reshape(3, 3)
         #     rot = mat2euler(xmat)
