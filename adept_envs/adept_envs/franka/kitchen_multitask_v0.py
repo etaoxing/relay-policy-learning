@@ -138,19 +138,17 @@ class KitchenV0(robot_env.RobotEnv):
         self.sim.data.mocap_pos[:] = new_pos.copy()
 
         if self.rot_use_euler:
-            current_quat = self.sim.data.mocap_quat.copy()
-            current_rot = quat2euler(current_quat) 
-            new_rot = current_rot + a[3:6] * self.rot_range
-            new_quat = euler2quat(new_rot)[0]
-            self.sim.data.mocap_quat[:] = new_quat.copy()
-
+            rot_a = a[3:6]
             gripper_a = a[6:8]
         else:
-            current_quat = self.sim.data.mocap_quat.copy()
-            new_quat = current_quat + a[3:7] # need some other way to limit this since identity quat is [1, 0, 0 ,0]
-            self.sim.data.mocap_quat[:] = new_quat.copy()
-
+            rot_a = quat2euler(a[3:7])
             gripper_a = a[7:9]
+
+        current_quat = self.sim.data.mocap_quat.copy()
+        current_rot = quat2euler(current_quat)
+        new_rot = current_rot + rot_a * self.rot_range
+        new_quat = euler2quat(new_rot)[0]
+        self.sim.data.mocap_quat[:] = new_quat.copy()
 
         # copy gripper joints into empty action and run
         ja = np.zeros(9, dtype=np.float)
