@@ -42,7 +42,7 @@ class KitchenV0(robot_env.RobotEnv):
         os.path.join(os.path.dirname(__file__), 'robot/franka_config.xml')
     }
     # Converted to velocity actuation
-    ROBOTS = {'robot': 'adept_envs.franka.robot.franka_robot:Robot_VelAct'}
+    ROBOTS = {'robot': 'adept_envs.franka.robot.franka_robot:Robot'}
     MODEL = os.path.join(
         os.path.dirname(__file__),
         'assets/franka_kitchen_jntpos_act_ab.xml')
@@ -52,20 +52,22 @@ class KitchenV0(robot_env.RobotEnv):
     N_DOF_ROBOT = 9
     N_DOF_OBJECT = 21
 
-    def __init__(self, robot_params={}, frame_skip=40, camera_id=1, use_mocap_ctrl=False, rot_use_euler=False):
+    def __init__(self, robot_params={}, frame_skip=40, camera_id=1, ctrl_mode='abs_vel', rot_use_euler=False):
+        assert ctrl_mode in ['mocap', 'abs_vel', 'rel_pos']
         # self.goal_concat = True
         # self.goal = np.zeros((30,))
         self.obs_dict = {}
         self.robot_noise_ratio = 0.1  # 10% as per robot_config specs
         self.camera_id = camera_id
-        self.use_mocap_ctrl = use_mocap_ctrl
+        self.ctrl_mode = ctrl_mode
         self.rot_use_euler = rot_use_euler
 
+        self.jnt_range = 0.05
         self.pos_range = 0.05 # limit maximum change in position
         self.rot_range = 0.05
 
         super().__init__(
-            self.MODEL_TELEOP if self.use_mocap_ctrl else self.MODEL,
+            self.MODEL_TELEOP if self.ctrl_mode == 'mocap' else self.MODEL,
             robot=self.make_robot(
                 n_jnt=self.N_DOF_ROBOT,  #root+robot_jnts
                 n_obj=self.N_DOF_OBJECT,
@@ -87,7 +89,7 @@ class KitchenV0(robot_env.RobotEnv):
 
         self.init_qvel = self.sim.model.key_qvel[0].copy()
 
-        action_dim = 8 if self.use_mocap_ctrl and self.rot_use_euler else self.N_DOF_ROBOT
+        action_dim = 8 if self.ctrl_mode == 'mocap' and self.rot_use_euler else self.N_DOF_ROBOT
         self.act_mid = np.zeros(action_dim)
         self.act_amp = 2.0 * np.ones(action_dim)
         act_lower = -1*np.ones((action_dim,))
@@ -102,10 +104,12 @@ class KitchenV0(robot_env.RobotEnv):
         raise NotImplementedError()
 
     def step(self, *args, **kwargs):
-        if self.use_mocap_ctrl:
+        if self.ctrl_mode == 'mocap':
             self.step_mocap(*args, **kwargs)
-        else:
-            self.step_joints(*args, **kwargs)
+        elif self.ctrl_mode == 'abs_vel':
+            self.step_joints_absolute(*args, **kwargs)
+        elif self.ctrl_mode == 'rel_pos':
+            self.step_joints_relative(*args, **kwargs)
 
         # observations
         obs = self._get_obs()
@@ -165,7 +169,7 @@ class KitchenV0(robot_env.RobotEnv):
         self.robot.step( # this will call mujoco_env.do_simulation, which should take the first model.nu == 2 indices of ja
             self, ja, step_duration=self.skip * self.model.opt.timestep, enforce_limits=False)
 
-    def step_joints(self, a, b=None):
+    def step_joints_absolute(self, a, b=None):
         a = np.clip(a, -1.0, 1.0)
 
         if not self.initializing:
@@ -174,7 +178,16 @@ class KitchenV0(robot_env.RobotEnv):
         #     self.goal = self._get_task_goal()  # update goal if init
 
         self.robot.step(
-            self, a, step_duration=self.skip * self.model.opt.timestep)
+            self, a, step_duration=self.skip * self.model.opt.timestep, mode='velact')
+
+    def step_joints_relative(self, a, b=None):
+        a = np.clip(a, -1.0, 1.0)
+
+        if not self.initializing:
+            a = self.sim.data.qpos[:self.robot.n_jnt] + a * self.jnt_range
+
+        self.robot.step(
+            self, a, step_duration=self.skip * self.model.opt.timestep, mode='posact')
 
     def _get_obs(self):
         t, qp, qv, obj_qp, obj_qv = self.robot.get_obs(

@@ -175,15 +175,21 @@ class Robot(base_robot.BaseRobot):
 
 
     # step the robot env
-    def step(self, env, ctrl_desired, step_duration, sim_override=False, enforce_limits=True):
-
+    def step(self, env, ctrl_desired, step_duration, sim_override=False, enforce_limits=True, mode='velact'):
+        
         # Populate observation cache during startup
         if env.initializing:
             self._observation_cache_refresh(env)
 
         if enforce_limits:
-            # enforce velocity limits
-            ctrl_feasible = self.ctrl_velocity_limits(ctrl_desired, step_duration)
+            if mode == 'velact':
+                # enforce velocity limits
+                ctrl_feasible = self.ctrl_velocity_limits_velact(ctrl_desired, step_duration) # this converts ctrl_desired in vel to pos
+            elif mode == 'posact':
+                # enforce velocity limits
+                ctrl_feasible = self.ctrl_velocity_limits_posact(ctrl_desired, step_duration)
+            else:
+                raise ValueError
 
             # enforce position limits
             ctrl_feasible = self.ctrl_position_limits(ctrl_feasible)
@@ -242,11 +248,9 @@ class Robot(base_robot.BaseRobot):
             cprint("Closing Franka sim", 'white', 'on_grey', flush=True)
 
 
-class Robot_PosAct(Robot):
-
     # enforce velocity sepcs.
     # ALERT: This depends on previous observation. This is not ideal as it breaks MDP addumptions. Be careful
-    def ctrl_velocity_limits(self, ctrl_position, step_duration):
+    def ctrl_velocity_limits_posact(self, ctrl_position, step_duration):
         last_obs = self.observation_cache[-1]
         ctrl_desired_vel = (ctrl_position-last_obs.qpos_robot[:self.n_jnt])/step_duration
 
@@ -255,14 +259,11 @@ class Robot_PosAct(Robot):
         return ctrl_feasible_position
 
 
-class Robot_VelAct(Robot):
-
     # enforce velocity sepcs.
     # ALERT: This depends on previous observation. This is not ideal as it breaks MDP addumptions. Be careful
-    def ctrl_velocity_limits(self, ctrl_velocity, step_duration):
+    def ctrl_velocity_limits_velact(self, ctrl_velocity, step_duration):
         last_obs = self.observation_cache[-1]
 
         ctrl_feasible_vel = np.clip(ctrl_velocity, self.robot_vel_bound[:self.n_jnt, 0], self.robot_vel_bound[:self.n_jnt, 1])
         ctrl_feasible_position = last_obs.qpos_robot[:self.n_jnt] + ctrl_feasible_vel*step_duration
         return ctrl_feasible_position
-
