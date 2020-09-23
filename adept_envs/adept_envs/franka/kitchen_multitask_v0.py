@@ -62,7 +62,7 @@ class KitchenV0(robot_env.RobotEnv):
         self.ctrl_mode = ctrl_mode
         self.rot_use_euler = rot_use_euler
 
-        self.jnt_range = 0.05
+        self.jnt_range = 0.15
         self.pos_range = 0.05 # limit maximum change in position
         self.rot_range = 0.05
 
@@ -164,7 +164,7 @@ class KitchenV0(robot_env.RobotEnv):
         #     ja = self.act_mid + ja * self.act_amp  # mean center and scale
 
         # open/close saved if zero action for gripper
-        ja[:2] = self.sim.data.qpos[7:9] + gripper_a # qpos indices from env.sim.model.actuator_trnid
+        ja[:2] = self.sim.data.qpos[7:9].copy() + gripper_a # qpos indices from env.sim.model.actuator_trnid
 
         self.robot.step( # this will call mujoco_env.do_simulation, which should take the first model.nu == 2 indices of ja
             self, ja, step_duration=self.skip * self.model.opt.timestep, enforce_limits=False)
@@ -184,7 +184,7 @@ class KitchenV0(robot_env.RobotEnv):
         a = np.clip(a, -1.0, 1.0)
 
         if not self.initializing:
-            a = self.sim.data.qpos[:self.robot.n_jnt] + a * self.jnt_range
+            a = self.sim.data.qpos[:self.robot.n_jnt].copy() + a * self.jnt_range # TODO: use observatin cache instead of sim.data
 
         self.robot.step(
             self, a, step_duration=self.skip * self.model.opt.timestep, mode='posact')
@@ -206,8 +206,8 @@ class KitchenV0(robot_env.RobotEnv):
 
     def get_obs_ee(self): # should in in global coordinates
         i = self.sim.model.site_name2id('end_effector')
-        pos = self.sim.data.site_xpos[i, ...]
-        xmat = self.sim.data.site_xmat[i, ...]
+        pos = self.sim.data.site_xpos[i, ...].copy()
+        xmat = self.sim.data.site_xmat[i, ...].copy()
         xmat = xmat.reshape(3, 3)
         if self.rot_use_euler:
             rot = mat2euler(xmat)
