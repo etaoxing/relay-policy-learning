@@ -290,10 +290,17 @@ class KitchenTaskRelaxV1(KitchenV0):
 
     def render(self, mode='human', camera_id=None, height=1920, width=2560):
         if mode =='rgb_array':
+            # TODO: cache camera? doesn't seem to affect performance that much
+            # also use camera._scene.free()? though it will slow things down
             if camera_id is None: camera_id = self.camera_id
             camera = engine.MovableCamera(self.sim, height=height, width=width)
             camera.set_pose(**CAMERAS[camera_id])
-            img = camera.render()
+            
+            # http://www.mujoco.org/book/APIreference.html#mjvOption
+            # https://github.com/deepmind/dm_control/blob/9e0fe0f0f9713a2a993ca78776529011d6c5fbeb/dm_control/mujoco/engine.py#L200
+            # mjtRndFlag(mjRND_SHADOW=0, mjRND_WIREFRAME=1, mjRND_REFLECTION=2, mjRND_ADDITIVE=3, mjRND_SKYBOX=4, mjRND_FOG=5, mjRND_HAZE=6, mjRND_SEGMENT=7, mjRND_IDCOLOR=8, mjNRNDFLAG=9)
+            # img = camera.render(render_flag_overrides=dict(shadow=False, reflection=False, skybox=False, fog=False, haze=False))
+            img = camera.render(render_flag_overrides=dict(skybox=False, fog=False, haze=False))
             return img
         else:
             super(KitchenTaskRelaxV1, self).render()

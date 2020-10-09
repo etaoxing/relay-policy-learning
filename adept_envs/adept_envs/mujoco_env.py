@@ -32,7 +32,7 @@ from adept_envs.simulation.sim_robot import MujocoSimRobot, RenderMode
 DEFAULT_RENDER_SIZE = 480
 
 USE_DM_CONTROL = True
-
+# import mujoco_py # must import if using mujoco_py backend, otherwise get error: GLEW initalization error: Missing GL version
 
 class MujocoEnv(gym.Env):
     """Superclass for all MuJoCo environments."""
@@ -71,7 +71,7 @@ class MujocoEnv(gym.Env):
             'render.modes': ['human', 'rgb_array', 'depth_array'],
             'video.frames_per_second': int(np.round(1.0 / self.dt))
         }
-        self.mujoco_render_frames = False
+        # self.mujoco_render_frames = False
 
         self.init_qpos = self.data.qpos.ravel().copy()
         self.init_qvel = self.data.qvel.ravel().copy()
@@ -153,9 +153,9 @@ class MujocoEnv(gym.Env):
         for _ in range(n_frames):
             self.sim.step()
 
-            # TODO(michaelahn): Remove this; render should be called separately.
-            if self.mujoco_render_frames is True:
-                self.mj_render()
+            # # TODO(michaelahn): Remove this; render should be called separately.
+            # if self.mujoco_render_frames is True:
+            #     self.mj_render()
 
     def render(self,
                mode='human',
