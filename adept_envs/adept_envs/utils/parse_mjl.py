@@ -7,7 +7,6 @@ mjl format: http://www.mujoco.org/book/haptix.html#uiRecord
 import struct
 import numpy as np
 import matplotlib as mpl
-mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 import click
 
