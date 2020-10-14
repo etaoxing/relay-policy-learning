@@ -22,18 +22,18 @@ FPS = 30.
 FOURCC = cv2.VideoWriter_fourcc(*'XVID')
 VIDEO_EXT = 'avi'
 
-# FRAME_SIZE = (64, 64)
-# FRAME_SIZE = (128, 128)
-FRAME_SIZE = (120, 160)
-# FRAME_SIZE = (256, 256)
-# FRAME_SIZE = (240, 320)
-# FRAME_SIZE = (480, 640)
-# FRAME_SIZE = (1920, 2560)
+# RENDER_SIZE = (64, 64)
+RENDER_SIZE = (128, 128)
+# RENDER_SIZE = (120, 160)
+# RENDER_SIZE = (256, 256)
+# RENDER_SIZE = (240, 320)
+# RENDER_SIZE = (480, 640)
+# RENDER_SIZE = (1920, 2560)
 
 out_dir = 'workdir/'
 # which_set = 'postcorl'
-which_set = 'friday'
-# which_set = None
+# which_set = 'friday'
+which_set = None
 
 obj_indices_map = { # https://relay-policy-learning.github.io/assets/mp4/collage_RPL_success2.mp4
     'microwave': [22], # M
@@ -70,10 +70,10 @@ env.seed(0)
 
 def save_video(render_buffer, filepath):
     vw = cv2.VideoWriter(filepath, 
-                         FOURCC, FPS, FRAME_SIZE[::-1])
+                         FOURCC, FPS, RENDER_SIZE[::-1])
     for frame in render_buffer:
         frame = frame.copy()
-        # frame = cv2.resize(frame, FRAME_SIZE[::-1])
+        # frame = cv2.resize(frame, RENDER_SIZE[::-1])
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         vw.write(frame)
     vw.release()
@@ -126,7 +126,7 @@ def render_demo(data, use_physics=False):
             if render == 'onscreen':
                 env.mj_render()
             elif render == 'offscreen':
-                curr_frame = env.render(mode='rgb_array', height=FRAME_SIZE[0], width=FRAME_SIZE[1])
+                curr_frame = env.render(mode='rgb_array', height=RENDER_SIZE[0], width=RENDER_SIZE[1])
                 render_buffer.append(curr_frame)
                 # return render_buffer
             else:
@@ -172,7 +172,7 @@ def process_demo(filepath,
 
     data = parse_mjl_logs(filepath, FRAME_SKIP)
 
-    fn_meta = f'c{CAMERA_ID}h{FRAME_SIZE[0]}w{FRAME_SIZE[1]}'
+    fn_meta = f'c{CAMERA_ID}h{RENDER_SIZE[0]}w{RENDER_SIZE[1]}'
 
     if view_demo:
         render_buffer = render_demo(data, use_physics=False)
@@ -288,4 +288,4 @@ if __name__ == '__main__':
         # if 'friday_microwave_kettle_bottomknob_hinge' not in filepath: continue
         print(filepath)
         process_demo(filepath)
-        break
+        # break
