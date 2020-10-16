@@ -61,7 +61,7 @@
             <geom type="box" group="2" pos='0 0 .142' size="0.02 0.10 0.03" contype="0" conaffinity="0" rgba=".9 .7 .95 0" euler="0 0 -.785"/>
 
             <!-- for kitchen/assets -->
-            <geom type="box" group="1" pos="0 0 .142" size="0.02 0.10 0.03" contype="0" conaffinity="0" rgba=".9 .7 .95 0.5" euler="0 0 -.785"/>
+            <geom type="box" group="1" pos="0 0 .142" size="0.02 0.10 0.03" contype="0" conaffinity="0" rgba=".9 .7 .95 0" euler="0 0 -.785"/>
         </body>
 
         <site name='target' pos='0 0 0' size='0.1' rgba='0 2 0 .2'/>
