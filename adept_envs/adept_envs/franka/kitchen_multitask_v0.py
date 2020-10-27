@@ -52,7 +52,7 @@ class KitchenV0(robot_env.RobotEnv):
     N_DOF_ROBOT = 9
     N_DOF_OBJECT = 21
 
-    def __init__(self, robot_params={}, frame_skip=40, camera_id=1, ctrl_mode='abs_vel', rot_use_euler=False):
+    def __init__(self, robot_params={}, frame_skip=40, camera_id=1, ctrl_mode='abs_vel', rot_use_euler=False, binary_gripper=False):
         assert ctrl_mode in ['mocap', 'abs_vel', 'rel_pos']
         # self.goal_concat = True
         # self.goal = np.zeros((30,))
@@ -61,6 +61,7 @@ class KitchenV0(robot_env.RobotEnv):
         self.camera_id = camera_id
         self.ctrl_mode = ctrl_mode
         self.rot_use_euler = rot_use_euler
+        self.binary_gripper = binary_gripper
 
         self.jnt_range = 0.15
         self.pos_range = 0.05 # limit maximum change in position
@@ -89,7 +90,14 @@ class KitchenV0(robot_env.RobotEnv):
 
         self.init_qvel = self.sim.model.key_qvel[0].copy()
 
-        action_dim = 8 if self.ctrl_mode == 'mocap' and self.rot_use_euler else self.N_DOF_ROBOT
+        if self.ctrl_mode == 'mocap':
+            pos_action_dim = 3
+            rot_action_dim = 3 if self.rot_use_euler else 4
+            gripper_action_dim = 1 if self.binary_gripper else 2
+            action_dim = pos_action_dim + rot_action_dim + gripper_action_dim
+        else:
+            action_dim = self.N_DOF_ROBOT
+
         self.act_mid = np.zeros(action_dim)
         self.act_amp = 2.0 * np.ones(action_dim)
         act_lower = -1*np.ones((action_dim,))
@@ -107,9 +115,9 @@ class KitchenV0(robot_env.RobotEnv):
         if self.ctrl_mode == 'mocap':
             self.step_mocap(*args, **kwargs)
         elif self.ctrl_mode == 'abs_vel':
-            self.step_joints_absolute(*args, **kwargs)
+            self.step_absvel(*args, **kwargs)
         elif self.ctrl_mode == 'rel_pos':
-            self.step_joints_relative(*args, **kwargs)
+            self.step_relpos(*args, **kwargs)
 
         # observations
         obs = self._get_obs()
@@ -131,7 +139,7 @@ class KitchenV0(robot_env.RobotEnv):
         # self.render()
         return obs, reward_dict['r_total'], done, env_info
 
-    def step_mocap(self, a, b=None):
+    def step_mocap(self, a, b=None): # ALERT: This depends on previous observation. This is not ideal as it breaks MDP addumptions. Be careful
         a = np.clip(a, -1.0, 1.0)
 
         reset_mocap2body_xpos(self.sim)
@@ -143,10 +151,10 @@ class KitchenV0(robot_env.RobotEnv):
 
         if self.rot_use_euler:
             rot_a = a[3:6]
-            gripper_a = a[6:8]
+            gripper_a = a[6:8] if not self.binary_gripper else a[6]
         else:
             rot_a = quat2euler(a[3:7])
-            gripper_a = a[7:9]
+            gripper_a = a[7:9] if not self.binary_gripper else a[7]
 
         current_quat = self.sim.data.mocap_quat.copy()
         current_rot = quat2euler(current_quat)
@@ -163,13 +171,18 @@ class KitchenV0(robot_env.RobotEnv):
         #     # act_mid and act_map are uniform so it's fine if gripper jnts are the first indices
         #     ja = self.act_mid + ja * self.act_amp  # mean center and scale
 
-        # open/close saved if zero action for gripper
-        ja[:2] = self.sim.data.qpos[7:9].copy() + gripper_a # qpos indices from env.sim.model.actuator_trnid
+        if not self.binary_gripper:
+            # open/close saved if zero action for gripper
+            ja[:2] = self.sim.data.qpos[7:9].copy() + gripper_a # qpos indices from env.sim.model.actuator_trnid
+        else:
+            gripper_a = -1 * np.sign(gripper_a)
+            ja[:2] = gripper_a
+            print(ja)
 
         self.robot.step( # this will call mujoco_env.do_simulation, which should take the first model.nu == 2 indices of ja
             self, ja, step_duration=self.skip * self.model.opt.timestep, enforce_limits=False)
 
-    def step_joints_absolute(self, a, b=None):
+    def step_absvel(self, a, b=None):
         a = np.clip(a, -1.0, 1.0)
 
         if not self.initializing:
@@ -180,7 +193,7 @@ class KitchenV0(robot_env.RobotEnv):
         self.robot.step(
             self, a, step_duration=self.skip * self.model.opt.timestep, mode='velact')
 
-    def step_joints_relative(self, a, b=None):
+    def step_relpos(self, a, b=None):
         a = np.clip(a, -1.0, 1.0)
 
         if not self.initializing:
