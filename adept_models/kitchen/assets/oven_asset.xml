@@ -32,7 +32,7 @@
                 <light directional="false" castshadow="true" attenuation="0.03 0.03 0.03" cutoff="100" exponent="25" diffuse=".7 .65 .65" specular=".3 .3 .3"/>
             </default>
             <default class="oven_collision">
-                <geom conaffinity="1" condim="3" contype="0" group="4" margin="0.001" material="oven_collision_blue" type="mesh"/>
+                <geom conaffinity="1" condim="6" contype="0" group="4" margin="0.001" material="oven_collision_blue" type="mesh"/>
             </default>
         </default>
     </default>
