@@ -24,7 +24,7 @@
             <joint damping="2" frictionloss="2" armature=".01" limited="true"/>
             <geom conaffinity="0" contype="0" group="1" material="counter_metal" type="mesh"/>
             <default class="counter_collision">
-                <geom conaffinity="1" condim="6" contype="0" group="4" margin="0.001" material="counter_collision_blue"/>
+                <geom conaffinity="1" condim="6" contype="1" group="4" margin="0.001" material="counter_collision_blue"/>
             </default>
         </default>
     </default>
