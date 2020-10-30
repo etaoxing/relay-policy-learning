@@ -8,7 +8,6 @@ The code instantiates a kitchen environment and parses associated demonstrations
 - Mocap end effector control
 - Turn on noslip solver
 - Rendering optimizations (see [2fa574e1b36843ae961a046a69d1a169269b3975] and [d8627da98202cc34bb259eb06a801e5f43c34479])
-- Fix object penetrations (see [f7eae3f03da5bd11a989ee568ca1a254ba521bd0])
 
 ## Getting Started (User)
 
