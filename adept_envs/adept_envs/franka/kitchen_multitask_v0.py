@@ -57,7 +57,11 @@ class KitchenV0(robot_env.RobotEnv):
         # self.goal_concat = True
         # self.goal = np.zeros((30,))
         self.obs_dict = {}
+
+        # NOTE: this is actually getting multiplied by values in franka_config.xml, so it's 10% of the actual noise specified,
+        # see https://github.com/google-research/relay-policy-learning/blob/cd70ac9334f584f86db281a1ffd3e5cbc3e5e293/adept_envs/adept_envs/franka/robot/franka_robot.py#L155
         self.robot_noise_ratio = 0.1  # 10% as per robot_config specs
+
         self.camera_id = camera_id
         self.ctrl_mode = ctrl_mode
         self.rot_use_euler = rot_use_euler
