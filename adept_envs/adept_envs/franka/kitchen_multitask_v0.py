@@ -109,7 +109,7 @@ class KitchenV0(robot_env.RobotEnv):
         act_upper =  1*np.ones((action_dim,))
         self.action_space = spaces.Box(act_lower, act_upper)
 
-        obs_upper = 8. * np.ones(self.obs_dim)
+        obs_upper = np.inf * np.ones(self.obs_dim)
         obs_lower = -obs_upper
         self.observation_space = spaces.Box(obs_lower, obs_upper)
 
@@ -254,6 +254,18 @@ class KitchenV0(robot_env.RobotEnv):
         # else:
         #     rot = self.sim.data.xquat[i, ...]
         return np.concatenate([pos, rot])
+
+    def get_obs_forces(self):
+        # explicitly compute contacts since mujoco2.0 doesn't call this
+        # see https://github.com/openai/gym/issues/1541
+        engine.mjlib.mj_rnePostConstraint(self.sim.model.ptr, self.sim.data.ptr)
+        finger_id_left = self.sim.model.body_name2id('panda0_leftfinger')
+        finger_id_right = self.sim.model.body_name2id('panda0_rightfinger')
+
+        # NOTE: these values can get pretty large, like [-2000, 2000]
+        l = self.sim.data.cfrc_ext[finger_id_left, ...].copy()
+        r = self.sim.data.cfrc_ext[finger_id_right, ...].copy()
+        return np.concatenate([l, r])
 
     def reset_model(self):
         reset_pos = self.init_qpos[:].copy()
