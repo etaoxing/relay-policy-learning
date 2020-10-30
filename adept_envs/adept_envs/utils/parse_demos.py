@@ -112,7 +112,7 @@ def gather_training_data(env, data, filename='demo_playback.mp4', render=None):
         #     env.sim.data.qvel[:] = qv
         #     env.sim.forward()
 
-        obs = env._get_obs()
+        obs, obs_v = env._get_obs()
 
         # Construct the action
         # ctrl = (data['qpos'][i_frame + 1][:9] - obs[:9]) / (env.skip * env.model.opt.timestep)

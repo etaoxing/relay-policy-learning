@@ -125,7 +125,7 @@ class KitchenV0(robot_env.RobotEnv):
             raise ValueError
 
         # observations
-        obs = self._get_obs()
+        obs, obs_v = self._get_obs()
 
         #rewards
         reward_dict, score = self._get_reward_n_score(self.obs_dict)
@@ -135,8 +135,9 @@ class KitchenV0(robot_env.RobotEnv):
 
         # finalize step
         env_info = {
+            'obs_v': obs_v
             # 'time': self.obs_dict['t'],
-            'obs_dict': self.obs_dict,
+            # 'obs_dict': self.obs_dict,
             # 'rewards': reward_dict,
             # 'score': score,
             # 'images': np.asarray(self.render(mode='rgb_array'))
@@ -217,16 +218,16 @@ class KitchenV0(robot_env.RobotEnv):
         t, qp, qv, obj_qp, obj_qv = self.robot.get_obs(
             self, robot_noise_ratio=self.robot_noise_ratio)
 
-        self.obs_dict = {}
-        self.obs_dict['t'] = t
-        self.obs_dict['qp'] = qp
-        self.obs_dict['qv'] = qv
-        self.obs_dict['obj_qp'] = obj_qp
-        self.obs_dict['obj_qv'] = obj_qv
+        # self.obs_dict = {}
+        # self.obs_dict['t'] = t
+        # self.obs_dict['qp'] = qp
+        # self.obs_dict['qv'] = qv
+        # self.obs_dict['obj_qp'] = obj_qp
+        # self.obs_dict['obj_qv'] = obj_qv
         # self.obs_dict['goal'] = self.goal
         # if self.goal_concat:
         #     return np.concatenate([self.obs_dict['qp'], self.obs_dict['obj_qp'], self.obs_dict['goal']])
-        return np.concatenate([self.obs_dict['qp'], self.obs_dict['obj_qp']])
+        return np.concatenate([qp, obj_qp]), np.concatenate([qv, obj_qv])
 
     def get_obs_ee(self, rot_use_euler=None): # should in in global coordinates
         if rot_use_euler is None: rot_use_euler = self.rot_use_euler
@@ -261,7 +262,8 @@ class KitchenV0(robot_env.RobotEnv):
             self.sim.step()
 
         # self.goal = self._get_task_goal()  #sample a new goal on reset
-        return self._get_obs()
+        obs, obs_v = self._get_obs()
+        return obs
 
     # def evaluate_success(self, paths):
     #     # score
