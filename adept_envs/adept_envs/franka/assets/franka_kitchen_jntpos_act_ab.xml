@@ -44,16 +44,16 @@
               meshdir="../../../../adept_models/kitchen"
               texturedir="../../../../adept_models/kitchen"/>
 
-    <equality>
+    <!-- <equality>
         <weld body1="vive_controller" body2="world" solref="0.02 1" solimp=".7 .95 0.050"/>
-    </equality>
+    </equality> -->
 
     <worldbody>
 
         <!-- Mocap -->
-        <body name="vive_controller" mocap="true" pos="-0.440 -0.092 2.026" euler="-1.57 0 -.785">
+        <!-- <body name="vive_controller" mocap="true" pos="-0.440 -0.092 2.026" euler="-1.57 0 -.785">
             <geom type="box" group="2" pos='0 0 .142' size="0.02 0.10 0.03" contype="0" conaffinity="0" rgba=".9 .7 .95 0" euler="0 0 -.785"/>
-        </body>
+        </body> -->
 
         <site name='target' pos='0 0 0' size='0.1' rgba='0 2 0 .2'/>
         <camera name='left_cap' pos='-1.2 -0.5 1.8' quat='0.78 0.49 -0.22 -0.32' />
