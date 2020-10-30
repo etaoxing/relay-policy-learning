@@ -46,11 +46,18 @@
               texturedir="../../../../adept_models/kitchen"/>
 
     <equality>
-        <!-- <weld body1="vive_controller" body2="world" solref="0.02 1" solimp=".7 .95 0.050"/> -->
-        <weld body1="vive_controller" body2="panda0_link7" solref="0.02 1" solimp=".7 .95 0.050"/>
+        <!-- original constraints -->
+        <!-- <weld body1="vive_controller" body2="world" solref="0.02 1" solimp=".7 .95 0.050"/>  -->
+        <!-- <weld body1="vive_controller" body2="panda0_link7" solref="0.02 1" solimp="0.7 0.95 0.050"/> -->
+
+        <!-- Set the impedance to constant 0.9, with width 0, seems to reduce penetration (ie. gripper finger w/ microwave handle) -->
+        <weld body1="vive_controller" body2="panda0_link7" solref="0.02 1" solimp="0.7 0.9 0"/>
 
         <!-- from franka_panda_teleop.xml-->
-        <!-- <weld body1="vive_controller" body2="panda0_link7" solref="0.02 1" solimp=".25 .25 0.001"/> --> 
+        <!-- <weld body1="vive_controller" body2="panda0_link7" solref="0.01 1" solimp=".25 .25 0.001"/>  -->
+
+        <!-- from Abhishek's code -->
+        <!-- <weld body1="vive_controller" body2="panda0_link7" solref="0.02 1" solimp=".4 .85 .1"/> -->
     </equality>
 
     <worldbody>
