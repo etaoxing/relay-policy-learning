@@ -113,7 +113,7 @@ def render_demo(data, use_physics=False):
             #     env.sim.data.qvel[:] = qv
             #     env.sim.forward()
 
-            obs = env._get_obs()
+            obs, obs_v = env._get_obs()
         else:
             if i_frame == N: # w/o physics, not getting terminal obseration, so will have one less obs than w/ physics
                 break
@@ -163,7 +163,7 @@ def render_demo(data, use_physics=False):
 
 def process_demo(filepath,
                  view_demo=True, # view demos (physics ignored)
-                 playback_demo=False, # playback demos and get data(physics respected)
+                 playback_demo=True, # playback demos and get data(physics respected)
                  save_data=True,
                  graph=False):
     _, task, fn = filepath.split('/')
@@ -285,7 +285,7 @@ if __name__ == '__main__':
 
     # print = tqdm.write
     for filepath in tqdm(demos, file=sys.stdout):
-        # if 'friday_microwave_kettle_bottomknob_hinge' not in filepath: continue
+        # if 'friday_microwave_kettle_hinge_slide' not in filepath: continue
         print(filepath)
         process_demo(filepath)
         # break
