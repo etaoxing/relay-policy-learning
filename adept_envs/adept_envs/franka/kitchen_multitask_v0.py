@@ -23,7 +23,7 @@ from gym import spaces
 from dm_control.mujoco import engine
 
 from .utils import reset_mocap2body_xpos, reset_mocap_welds
-from .rotations import euler2quat, mat2euler, quat2euler, mat2quat
+from .rotations import euler2quat, mat2euler, quat2euler, mat2quat, quat_mul
 
 CAMERAS = {
     0: dict(distance=4.5, azimuth=-66, elevation=-65),
@@ -53,7 +53,7 @@ class KitchenV0(robot_env.RobotEnv):
     N_DOF_OBJECT = 21
 
     def __init__(self, robot_params={}, frame_skip=40, camera_id=1, ctrl_mode='abs_vel', rot_use_euler=False, binary_gripper=False):
-        assert ctrl_mode in ['mocap', 'abs_vel', 'rel_pos']
+        assert ctrl_mode in ['mocap', 'abs_vel', 'rel_pos', 'ee_ik']
         # self.goal_concat = True
         # self.goal = np.zeros((30,))
         self.obs_dict = {}
@@ -63,6 +63,7 @@ class KitchenV0(robot_env.RobotEnv):
         self.rot_use_euler = rot_use_euler
         self.binary_gripper = binary_gripper
 
+        self.mocapid = None # set later since sim is not yet initialized
         self.jnt_range = 0.15
         self.pos_range = 0.05 # limit maximum change in position
         self.rot_range = 0.05
@@ -90,7 +91,7 @@ class KitchenV0(robot_env.RobotEnv):
 
         self.init_qvel = self.sim.model.key_qvel[0].copy()
 
-        if self.ctrl_mode == 'mocap':
+        if self.ctrl_mode == 'mocap' or self.ctrl_mode == 'ee_ik':
             pos_action_dim = 3
             rot_action_dim = 3 if self.rot_use_euler else 4
             gripper_action_dim = 1 if self.binary_gripper else 2
@@ -115,9 +116,13 @@ class KitchenV0(robot_env.RobotEnv):
         if self.ctrl_mode == 'mocap':
             self.step_mocap(*args, **kwargs)
         elif self.ctrl_mode == 'abs_vel':
-            self.step_absvel(*args, **kwargs)
+            self.step_abs_vel(*args, **kwargs)
         elif self.ctrl_mode == 'rel_pos':
-            self.step_relpos(*args, **kwargs)
+            self.step_rel_pos(*args, **kwargs)
+        elif self.ctrl_mode == 'ee_ik':
+            self.step_ee_ik(*args, **kwargs)
+        else:
+            raise ValueError
 
         # observations
         obs = self._get_obs()
@@ -143,46 +148,32 @@ class KitchenV0(robot_env.RobotEnv):
         a = np.clip(a, -1.0, 1.0)
 
         reset_mocap2body_xpos(self.sim)
+        if self.mocapid is None:
+            self.mocapid = self.sim.model.body_mocapid[self.sim.model.body_name2id('vive_controller')]
 
         # split action [3-dim Cartesian coordinate, 3-dim euler angle OR 4-dim quarternion, 2-dim gripper joints]
-        current_pos = self.sim.data.mocap_pos.copy()
+        current_pos = self.sim.data.mocap_pos[self.mocapid, ...].copy()
         new_pos = current_pos + a[:3] * self.pos_range
-        self.sim.data.mocap_pos[:] = new_pos.copy()
+        self.sim.data.mocap_pos[self.mocapid, ...] = new_pos.copy()
 
         if self.rot_use_euler:
-            rot_a = a[3:6]
-            gripper_a = a[6:8] if not self.binary_gripper else a[6]
+            rot_a = euler2quat(a[3:6] * self.rot_range)
+            gripper_a = np.sign(a[6]) if self.binary_gripper else a[6:8]
         else:
-            rot_a = quat2euler(a[3:7])
-            gripper_a = a[7:9] if not self.binary_gripper else a[7]
-
-        current_quat = self.sim.data.mocap_quat.copy()
-        current_rot = quat2euler(current_quat)
-        new_rot = current_rot + rot_a * self.rot_range
-        new_quat = euler2quat(new_rot)[0]
-        self.sim.data.mocap_quat[:] = new_quat.copy()
+            rot_a = euler2quat(quat2euler(a[3:7]) * self.rot_range)
+            gripper_a = np.sign(a[7]) if self.binary_gripper else a[7:9]
+        current_quat = self.sim.data.mocap_quat[self.mocapid, ...].copy()
+        new_quat = quat_mul(current_quat, rot_a)
+        self.sim.data.mocap_quat[self.mocapid, ...] = new_quat.copy()
 
         # copy gripper joints into empty action and run
         ja = np.zeros(9, dtype=np.float)
-
-        # # position ctrl for gripper
-        # ja[:2] = gripper_a
-        # if not self.initializing:
-        #     # act_mid and act_map are uniform so it's fine if gripper jnts are the first indices
-        #     ja = self.act_mid + ja * self.act_amp  # mean center and scale
-
-        if not self.binary_gripper:
-            # open/close saved if zero action for gripper
-            ja[:2] = self.sim.data.qpos[7:9].copy() + gripper_a # qpos indices from env.sim.model.actuator_trnid
-        else:
-            gripper_a = -1 * np.sign(gripper_a)
-            ja[:2] = gripper_a
-            print(ja)
+        ja[:2] = gripper_a
 
         self.robot.step( # this will call mujoco_env.do_simulation, which should take the first model.nu == 2 indices of ja
             self, ja, step_duration=self.skip * self.model.opt.timestep, enforce_limits=False)
 
-    def step_absvel(self, a, b=None):
+    def step_abs_vel(self, a, b=None):
         a = np.clip(a, -1.0, 1.0)
 
         if not self.initializing:
@@ -193,14 +184,34 @@ class KitchenV0(robot_env.RobotEnv):
         self.robot.step(
             self, a, step_duration=self.skip * self.model.opt.timestep, mode='velact')
 
-    def step_relpos(self, a, b=None):
+    def step_rel_pos(self, a, b=None):
         a = np.clip(a, -1.0, 1.0)
 
         if not self.initializing:
-            a = self.sim.data.qpos[:self.robot.n_jnt].copy() + a * self.jnt_range # TODO: use observatin cache instead of sim.data
+            a = self.sim.data.qpos[:self.robot.n_jnt].copy() + a * self.jnt_range # TODO: use observation cache instead of sim.data
 
         self.robot.step(
             self, a, step_duration=self.skip * self.model.opt.timestep, mode='posact')
+
+    def step_ee_ik(self, a, b=None):
+        a = np.clip(a, -1.0, 1.0)
+
+        obs_ee = self.get_obs_ee(rot_use_euler=False)
+        target_pos = obs_ee[:3] + a[:3] * self.pos_range
+        if self.rot_use_euler:
+            rot_a = euler2quat(a[3:6] * self.rot_range)
+            gripper_a = a[6:8] if not self.binary_gripper else np.sign(a[6])
+        else:
+            rot_a = euler2quat(quat2euler(a[3:7]) * self.rot_range)
+            gripper_a = a[7:9] if not self.binary_gripper else np.sign(a[7])
+
+        # target_quat = quat_mul(obs_ee[3:7], rot_a)
+        target_quat = obs_ee[3:7] # fix rot
+    
+        raise NotImplementedError # TODO
+
+        self.robot.step(
+            self, ja, step_duration=self.skip * self.model.opt.timestep, mode='posact')
 
     def _get_obs(self):
         t, qp, qv, obj_qp, obj_qv = self.robot.get_obs(
@@ -217,19 +228,21 @@ class KitchenV0(robot_env.RobotEnv):
         #     return np.concatenate([self.obs_dict['qp'], self.obs_dict['obj_qp'], self.obs_dict['goal']])
         return np.concatenate([self.obs_dict['qp'], self.obs_dict['obj_qp']])
 
-    def get_obs_ee(self): # should in in global coordinates
+    def get_obs_ee(self, rot_use_euler=None): # should in in global coordinates
+        if rot_use_euler is None: rot_use_euler = self.rot_use_euler
+        
         i = self.sim.model.site_name2id('end_effector')
         pos = self.sim.data.site_xpos[i, ...].copy()
         xmat = self.sim.data.site_xmat[i, ...].copy()
         xmat = xmat.reshape(3, 3)
-        if self.rot_use_euler:
+        if rot_use_euler:
             rot = mat2euler(xmat)
         else:
             rot = mat2quat(xmat)
 
         # i = self.sim.model.body_name2id('panda0_link7')
         # pos = self.sim.data.body_xpos[i, ...]
-        # if self.rot_use_euler:
+        # if rot_use_euler:
         #     xmat = self.sim.data.body_xmat[i, ...]
         #     xmat = xmat.reshape(3, 3)
         #     rot = mat2euler(xmat)
