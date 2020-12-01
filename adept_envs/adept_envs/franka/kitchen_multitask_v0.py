@@ -27,12 +27,17 @@ from .rotations import euler2quat, mat2euler, quat2euler, mat2quat, quat_mul
 
 CAMERAS = {
     0: dict(distance=4.5, azimuth=-66, elevation=-65),
-    1: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=70, elevation=-35), # as in https://relay-policy-learning.github.io/
-    2: dict(distance=2.65, lookat=[0, 0, 2.], azimuth=90, elevation=-60), # similar to appendix D of https://arxiv.org/pdf/1910.11956.pdf
-    3: dict(distance=2.5, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-60), # 3-6 are first person views at different angles and distances
-    4: dict(distance=2.5, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-45), # problem w/ POV is that the knobs can be hidden by the hinge drawer and arm
-    5: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-45),
-    6: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-10),
+    1: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=70, elevation=-35), # original, as in https://relay-policy-learning.github.io/
+    2: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=70, elevation=-50), # angled up to get a more top-down view
+
+    3: dict(distance=2.65, lookat=[0, 0, 2.], azimuth=90, elevation=-60), # similar to appendix D of https://arxiv.org/pdf/1910.11956.pdf
+
+    4: dict(distance=2.5, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-60), # 3-6 are first person views at different angles and distances
+    5: dict(distance=2.5, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-45), # problem w/ POV is that the knobs can be hidden by the hinge drawer and arm
+
+    7: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-50), # move back so less of cabinets
+    8: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-35),
+    9: dict(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=90, elevation=-10),
 }
 @configurable(pickleable=True)
 class KitchenV0(robot_env.RobotEnv):
@@ -93,7 +98,7 @@ class KitchenV0(robot_env.RobotEnv):
                                     3.50383255e-01,  1.61944683e+00,  1.00618764e+00,  4.06395120e-03,
                                    -6.62095997e-03, -2.68278933e-04])
 
-        self.init_qvel = self.sim.model.key_qvel[0].copy()
+        self.init_qvel = self.sim.model.key_qvel[0].copy() # this should be np.zeros(29)
 
         if self.ctrl_mode == 'mocap' or self.ctrl_mode == 'ee_ik':
             pos_action_dim = 3
@@ -332,7 +337,7 @@ class KitchenTaskRelaxV1(KitchenV0):
         score = 0.
         return reward_dict, score
 
-    def render(self, mode='human', camera_id=None, height=1920, width=2560):
+    def render(self, mode='human', camera_id=None, height=1920, width=2560, depth=False, segmentation=False):
         if mode =='rgb_array':
             # TODO: cache camera? doesn't seem to affect performance that much
             # also use camera._scene.free()? though it will slow things down
@@ -343,7 +348,10 @@ class KitchenTaskRelaxV1(KitchenV0):
             # http://www.mujoco.org/book/APIreference.html#mjvOption
             # https://github.com/deepmind/dm_control/blob/9e0fe0f0f9713a2a993ca78776529011d6c5fbeb/dm_control/mujoco/engine.py#L200
             # mjtRndFlag(mjRND_SHADOW=0, mjRND_WIREFRAME=1, mjRND_REFLECTION=2, mjRND_ADDITIVE=3, mjRND_SKYBOX=4, mjRND_FOG=5, mjRND_HAZE=6, mjRND_SEGMENT=7, mjRND_IDCOLOR=8, mjNRNDFLAG=9)
-            img = camera.render(render_flag_overrides=dict(skybox=False, fog=False, haze=False))
+            if not (depth or segmentation):
+                img = camera.render(render_flag_overrides=dict(skybox=False, fog=False, haze=False)) # RGB
+            else:
+                img = camera.render(depth=depth, segmentation=segmentation)
             return img
         else:
             super(KitchenTaskRelaxV1, self).render()
