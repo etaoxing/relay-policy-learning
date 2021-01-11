@@ -60,7 +60,14 @@ class KitchenV0(robot_env.RobotEnv):
     N_DOF_ROBOT = 9
     N_DOF_OBJECT = 21
 
-    def __init__(self, robot_params={}, frame_skip=40, camera_id=1, ctrl_mode='abs_vel', rot_use_euler=False, binary_gripper=False):
+    def __init__(self, robot_params={},
+        frame_skip=40,
+        camera_id=1,
+        ctrl_mode='abs_vel',
+        rot_use_euler=False,
+        binary_gripper=False,
+        fix_gripper_quat=True,
+    ):
         assert ctrl_mode in ['mocap', 'mocap_ik', 'abs_vel', 'rel_pos', 'ee_ik']
         # self.goal_concat = True
         # self.goal = np.zeros((30,))
@@ -80,11 +87,11 @@ class KitchenV0(robot_env.RobotEnv):
         self.pos_range = 0.05 # limit maximum change in position
         self.rot_range = 0.05
 
+        self.fix_gripper_quat = fix_gripper_quat
         self.initial_mocap_quat = np.array([-0.65269804, 0.65364932, 0.27044485, 0.27127002])
 
         # with mocap_ik, we follow robogym and robosuite by spawning a separate simulator
         if self.ctrl_mode == 'mocap_ik':
-            self.solver_sim_with_mode = 'posact'
             self._create_solver_sim()
 
         super().__init__(
@@ -215,12 +222,12 @@ class KitchenV0(robot_env.RobotEnv):
     def step_mocap_ik(self, a, b=None): # ALERT: This depends on previous observation. This is not ideal as it breaks MDP addumptions. Be careful
         a = np.clip(a, -1.0, 1.0)
 
-        # self.solver_sim.data.qpos[:] = self.sim.data.qpos[:].copy()
-        # self.solver_sim.data.qvel[:] = self.sim.data.qvel[:].copy()
+        self.solver_sim.data.qpos[:] = self.sim.data.qpos[:].copy()
+        self.solver_sim.data.qvel[:] = self.sim.data.qvel[:].copy()
 
-        # track object state
-        self.solver_sim.data.qpos[-self.N_DOF_OBJECT:] = self.sim.data.qpos[-self.N_DOF_OBJECT:].copy()
-        self.solver_sim.data.qvel[-self.N_DOF_OBJECT:] = self.sim.data.qvel[-self.N_DOF_OBJECT:].copy()
+        # # track object state only
+        # self.solver_sim.data.qpos[-self.N_DOF_OBJECT:] = self.sim.data.qpos[-self.N_DOF_OBJECT:].copy()
+        # self.solver_sim.data.qvel[-self.N_DOF_OBJECT:] = self.sim.data.qvel[-self.N_DOF_OBJECT:].copy()
 
         self.solver_sim.forward()
         # self.solver_sim.step()
@@ -240,12 +247,14 @@ class KitchenV0(robot_env.RobotEnv):
         else:
             rot_a = quat2euler(a[3:7]) * self.rot_range
             gripper_a = np.sign(a[7]) if self.binary_gripper else a[7:9]
-        current_quat = self.solver_sim.data.mocap_quat[self.mocapid, ...].copy()
-        new_quat = euler2quat(quat2euler(current_quat) + rot_a)
-        self.solver_sim.data.mocap_quat[self.mocapid, ...] = new_quat.copy()
 
-        # fixed to initial
-        # self.solver_sim.data.mocap_quat[self.mocapid, ...] = self.initial_mocap_quat
+        if self.fix_gripper_quat:
+            # fixed to initial
+            self.solver_sim.data.mocap_quat[self.mocapid, ...] = self.initial_mocap_quat
+        else:
+            current_quat = self.solver_sim.data.mocap_quat[self.mocapid, ...].copy()
+            new_quat = euler2quat(quat2euler(current_quat) + rot_a)
+            self.solver_sim.data.mocap_quat[self.mocapid, ...] = new_quat.copy()
 
         # mocap do_simulation w/ solver_sim
         self.solver_sim.data.ctrl[:2] = gripper_a.copy()
@@ -256,17 +265,12 @@ class KitchenV0(robot_env.RobotEnv):
 
         # self.solver_sim_renderer.render_to_window()
 
-        # get robot qpos (or qvel) from solver_sim and swap in gripper_a
-        if self.solver_sim_with_mode == 'velact':
-            ja = self.solver_sim.data.qvel[:self.N_DOF_ROBOT].copy()
-            ja[7:9] = gripper_a
-            self.robot.step(
-                self, ja, step_duration=self.skip * self.model.opt.timestep, mode='velact')
-        elif self.solver_sim_with_mode == 'posact':
-            ja = self.solver_sim.data.qpos[:self.N_DOF_ROBOT].copy()
-            ja[7:9] = gripper_a
-            self.robot.step(
-                self, ja, step_duration=self.skip * self.model.opt.timestep, mode='posact', enforce_limits=False)
+        # get robot qpos from solver_sim and swap in gripper_a
+        ja = self.solver_sim.data.qpos[:self.N_DOF_ROBOT].copy()
+        ja[7:9] = gripper_a
+
+        self.robot.step(
+            self, ja, step_duration=self.skip * self.model.opt.timestep, mode='posact', enforce_limits=False)
 
     def step_abs_vel(self, a, b=None):
         a = np.clip(a, -1.0, 1.0)
