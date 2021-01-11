@@ -141,9 +141,9 @@ class KitchenV0(robot_env.RobotEnv):
         from adept_envs.simulation.sim_robot import _patch_mjlib_accessors
         _patch_mjlib_accessors(self.solver_sim.model, self.solver_sim.data, True)
 
-        from adept_envs.simulation.renderer import DMRenderer
-        self.solver_sim_renderer = DMRenderer(
-                        self.solver_sim, camera_settings=CAMERAS[self.camera_id])
+        # from adept_envs.simulation.renderer import DMRenderer
+        # self.solver_sim_renderer = DMRenderer(
+        #                 self.solver_sim, camera_settings=CAMERAS[self.camera_id])
     
     def _get_reward_n_score(self, obs_dict):
         raise NotImplementedError()
@@ -254,7 +254,7 @@ class KitchenV0(robot_env.RobotEnv):
         for _ in range(n_frames):
             self.solver_sim.step()
 
-        self.solver_sim_renderer.render_to_window()
+        # self.solver_sim_renderer.render_to_window()
 
         # get robot qpos (or qvel) from solver_sim and swap in gripper_a
         if self.solver_sim_with_mode == 'velact':
