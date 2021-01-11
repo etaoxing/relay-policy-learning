@@ -54,11 +54,14 @@ class KitchenV0(robot_env.RobotEnv):
     MODEL_TELEOP = os.path.join(
         os.path.dirname(__file__),
         'assets/franka_kitchen_teleop.xml')
+    MODEL_TELEOP_SOLVER = os.path.join(
+        os.path.dirname(__file__),
+        'assets/franka_kitchen_teleop_solver.xml')
     N_DOF_ROBOT = 9
     N_DOF_OBJECT = 21
 
     def __init__(self, robot_params={}, frame_skip=40, camera_id=1, ctrl_mode='abs_vel', rot_use_euler=False, binary_gripper=False):
-        assert ctrl_mode in ['mocap', 'abs_vel', 'rel_pos', 'ee_ik']
+        assert ctrl_mode in ['mocap', 'mocap_ik', 'abs_vel', 'rel_pos', 'ee_ik']
         # self.goal_concat = True
         # self.goal = np.zeros((30,))
         self.obs_dict = {}
@@ -76,6 +79,13 @@ class KitchenV0(robot_env.RobotEnv):
         self.jnt_range = 0.15
         self.pos_range = 0.05 # limit maximum change in position
         self.rot_range = 0.05
+
+        self.initial_mocap_quat = np.array([-0.65269804, 0.65364932, 0.27044485, 0.27127002])
+
+        # with mocap_ik, we follow robogym and robosuite by spawning a separate simulator
+        if self.ctrl_mode == 'mocap_ik':
+            self.solver_sim_with_mode = 'posact'
+            self._create_solver_sim()
 
         super().__init__(
             self.MODEL_TELEOP if self.ctrl_mode == 'mocap' else self.MODEL,
@@ -100,7 +110,7 @@ class KitchenV0(robot_env.RobotEnv):
 
         self.init_qvel = self.sim.model.key_qvel[0].copy() # this should be np.zeros(29)
 
-        if self.ctrl_mode == 'mocap' or self.ctrl_mode == 'ee_ik':
+        if self.ctrl_mode == 'mocap' or self.ctrl_mode == 'mocap_ik' or self.ctrl_mode == 'ee_ik':
             pos_action_dim = 3
             rot_action_dim = 3 if self.rot_use_euler else 4
             gripper_action_dim = 1 if self.binary_gripper else 2
@@ -118,12 +128,31 @@ class KitchenV0(robot_env.RobotEnv):
         obs_lower = -obs_upper
         self.observation_space = spaces.Box(obs_lower, obs_upper)
 
+    def _create_solver_sim(self):
+        from adept_envs.simulation import module
+        # only support self._use_dm_backend == True
+        dm_mujoco = module.get_dm_mujoco()
+        model_file = self.MODEL_TELEOP_SOLVER
+        if model_file.endswith('.mjb'):
+            self.solver_sim = dm_mujoco.Physics.from_binary_path(model_file)
+        else:
+            self.solver_sim = dm_mujoco.Physics.from_xml_path(model_file)
+
+        from adept_envs.simulation.sim_robot import _patch_mjlib_accessors
+        _patch_mjlib_accessors(self.solver_sim.model, self.solver_sim.data, True)
+
+        from adept_envs.simulation.renderer import DMRenderer
+        self.solver_sim_renderer = DMRenderer(
+                        self.solver_sim, camera_settings=CAMERAS[self.camera_id])
+    
     def _get_reward_n_score(self, obs_dict):
         raise NotImplementedError()
 
     def step(self, *args, **kwargs):
         if self.ctrl_mode == 'mocap':
             self.step_mocap(*args, **kwargs)
+        elif self.ctrl_mode == 'mocap_ik':
+            self.step_mocap_ik(*args, **kwargs)
         elif self.ctrl_mode == 'abs_vel':
             self.step_abs_vel(*args, **kwargs)
         elif self.ctrl_mode == 'rel_pos':
@@ -183,6 +212,62 @@ class KitchenV0(robot_env.RobotEnv):
         self.robot.step( # this will call mujoco_env.do_simulation, which should take the first model.nu == 2 indices of ja
             self, ja, step_duration=self.skip * self.model.opt.timestep, enforce_limits=False)
 
+    def step_mocap_ik(self, a, b=None): # ALERT: This depends on previous observation. This is not ideal as it breaks MDP addumptions. Be careful
+        a = np.clip(a, -1.0, 1.0)
+
+        # self.solver_sim.data.qpos[:] = self.sim.data.qpos[:].copy()
+        # self.solver_sim.data.qvel[:] = self.sim.data.qvel[:].copy()
+
+        # track object state
+        self.solver_sim.data.qpos[-self.N_DOF_OBJECT:] = self.sim.data.qpos[-self.N_DOF_OBJECT:].copy()
+        self.solver_sim.data.qvel[-self.N_DOF_OBJECT:] = self.sim.data.qvel[-self.N_DOF_OBJECT:].copy()
+
+        self.solver_sim.forward()
+        # self.solver_sim.step()
+        reset_mocap2body_xpos(self.solver_sim)
+
+        if self.mocapid is None:
+            self.mocapid = self.solver_sim.model.body_mocapid[self.solver_sim.model.body_name2id('vive_controller')]
+
+        # split action [3-dim Cartesian coordinate, 3-dim euler angle OR 4-dim quarternion, 2-dim gripper joints]
+        current_pos = self.solver_sim.data.mocap_pos[self.mocapid, ...].copy()
+        new_pos = current_pos + a[:3] * self.pos_range
+        self.solver_sim.data.mocap_pos[self.mocapid, ...] = new_pos.copy()
+
+        if self.rot_use_euler:
+            rot_a = a[3:6] * self.rot_range
+            gripper_a = np.sign(a[6]) if self.binary_gripper else a[6:8]
+        else:
+            rot_a = quat2euler(a[3:7]) * self.rot_range
+            gripper_a = np.sign(a[7]) if self.binary_gripper else a[7:9]
+        current_quat = self.solver_sim.data.mocap_quat[self.mocapid, ...].copy()
+        new_quat = euler2quat(quat2euler(current_quat) + rot_a)
+        self.solver_sim.data.mocap_quat[self.mocapid, ...] = new_quat.copy()
+
+        # fixed to initial
+        # self.solver_sim.data.mocap_quat[self.mocapid, ...] = self.initial_mocap_quat
+
+        # mocap do_simulation w/ solver_sim
+        self.solver_sim.data.ctrl[:2] = gripper_a.copy()
+        step_duration = self.skip * self.model.opt.timestep
+        n_frames = int(step_duration/self.solver_sim.model.opt.timestep)
+        for _ in range(n_frames):
+            self.solver_sim.step()
+
+        self.solver_sim_renderer.render_to_window()
+
+        # get robot qpos (or qvel) from solver_sim and swap in gripper_a
+        if self.solver_sim_with_mode == 'velact':
+            ja = self.solver_sim.data.qvel[:self.N_DOF_ROBOT].copy()
+            ja[7:9] = gripper_a
+            self.robot.step(
+                self, ja, step_duration=self.skip * self.model.opt.timestep, mode='velact')
+        elif self.solver_sim_with_mode == 'posact':
+            ja = self.solver_sim.data.qpos[:self.N_DOF_ROBOT].copy()
+            ja[7:9] = gripper_a
+            self.robot.step(
+                self, ja, step_duration=self.skip * self.model.opt.timestep, mode='posact', enforce_limits=False)
+
     def step_abs_vel(self, a, b=None):
         a = np.clip(a, -1.0, 1.0)
 
@@ -217,8 +302,25 @@ class KitchenV0(robot_env.RobotEnv):
 
         # target_quat = quat_mul(obs_ee[3:7], rot_a)
         target_quat = obs_ee[3:7] # fix rot
-    
+        # target_quat = np.array([ 0.47034313, -0.49157263, -0.47903389, -0.55467128])
+
         raise NotImplementedError # TODO
+
+        # from dm_control.utils.inverse_kinematics import qpos_from_site_pose
+        # self.joint_names = [f'panda0_joint{i}' for i in range(1, 7+1)]
+
+        # # dm_control uses this to initialize starting positions for the robot, steps sim
+        # ikresult = qpos_from_site_pose(self.sim,
+        #     'end_effector',
+        #     target_pos=target_pos,
+        #     target_quat=target_quat,
+        #     joint_names=self.joint_names,
+        #     inplace=False,
+        #     max_steps=500,
+        # )
+        # ja = np.zeros(9, dtype=np.float)
+        # ja[:7] = ikresult.qpos[:7] 
+        # ja[7:9] = gripper_a
 
         self.robot.step(
             self, ja, step_duration=self.skip * self.model.opt.timestep, mode='posact')
@@ -281,6 +383,14 @@ class KitchenV0(robot_env.RobotEnv):
         self.sim.forward()
         for _ in range(10):
             self.sim.step()
+        # self.robot._observation_cache_refresh(self)
+
+        if self.ctrl_mode == 'mocap_ik':
+            self.solver_sim.data.qpos[:] = self.sim.data.qpos[:].copy()
+            self.solver_sim.data.qvel[:] = self.sim.data.qvel[:].copy()
+            reset_mocap_welds(self.solver_sim)
+            reset_mocap2body_xpos(self.solver_sim)
+            self.solver_sim.forward()
 
         # self.goal = self._get_task_goal()  #sample a new goal on reset
         obs, obs_v = self._get_obs()

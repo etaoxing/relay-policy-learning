@@ -23,6 +23,52 @@ from adept_envs.simulation import module
 from adept_envs.simulation.renderer import DMRenderer, MjPyRenderer, RenderMode
 
 
+def get_mjlib(use_dm_backend):
+    """Returns an object that exposes the low-level MuJoCo API."""
+    if use_dm_backend:
+        return module.get_dm_mujoco().wrapper.mjbindings.mjlib
+    else:
+        return module.get_mujoco_py_mjlib()
+
+def _patch_mjlib_accessors(model, data, use_dm_backend):
+    """Adds accessors to the DM Control objects to support mujoco_py API."""
+    use_dm_backend
+    mjlib = get_mjlib(use_dm_backend)
+
+    def name2id(type_name, name):
+        obj_id = mjlib.mj_name2id(model.ptr,
+                                    mjlib.mju_str2Type(type_name.encode()),
+                                    name.encode())
+        if obj_id < 0:
+            raise ValueError('No {} with name "{}" exists.'.format(
+                type_name, name))
+        return obj_id
+
+    if not hasattr(model, 'body_name2id'):
+        model.body_name2id = lambda name: name2id('body', name)
+
+    if not hasattr(model, 'geom_name2id'):
+        model.geom_name2id = lambda name: name2id('geom', name)
+
+    if not hasattr(model, 'site_name2id'):
+        model.site_name2id = lambda name: name2id('site', name)
+
+    if not hasattr(model, 'joint_name2id'):
+        model.joint_name2id = lambda name: name2id('joint', name)
+
+    if not hasattr(model, 'actuator_name2id'):
+        model.actuator_name2id = lambda name: name2id('actuator', name)
+
+    if not hasattr(model, 'camera_name2id'):
+        model.camera_name2id = lambda name: name2id('camera', name)
+
+    if not hasattr(data, 'body_xpos'):
+        data.body_xpos = data.xpos
+
+    if not hasattr(data, 'body_xquat'):
+        data.body_xquat = data.xquat
+
+
 class MujocoSimRobot:
     """Class that encapsulates a MuJoCo simulation.
 
@@ -60,7 +106,7 @@ class MujocoSimRobot:
             else:
                 self.sim = dm_mujoco.Physics.from_xml_path(model_file)
             self.model = self.sim.model
-            self._patch_mjlib_accessors(self.model, self.sim.data)
+            _patch_mjlib_accessors(self.model, self.sim.data, self._use_dm_backend)
             self.renderer = DMRenderer(
                 self.sim, camera_settings=camera_settings)
         else:  # Use mujoco_py
@@ -88,48 +134,3 @@ class MujocoSimRobot:
         else:
             with open(path, 'wb') as f:
                 f.write(self.model.get_mjb())
-
-    def get_mjlib(self):
-        """Returns an object that exposes the low-level MuJoCo API."""
-        if self._use_dm_backend:
-            return module.get_dm_mujoco().wrapper.mjbindings.mjlib
-        else:
-            return module.get_mujoco_py_mjlib()
-
-    def _patch_mjlib_accessors(self, model, data):
-        """Adds accessors to the DM Control objects to support mujoco_py API."""
-        assert self._use_dm_backend
-        mjlib = self.get_mjlib()
-
-        def name2id(type_name, name):
-            obj_id = mjlib.mj_name2id(model.ptr,
-                                      mjlib.mju_str2Type(type_name.encode()),
-                                      name.encode())
-            if obj_id < 0:
-                raise ValueError('No {} with name "{}" exists.'.format(
-                    type_name, name))
-            return obj_id
-
-        if not hasattr(model, 'body_name2id'):
-            model.body_name2id = lambda name: name2id('body', name)
-
-        if not hasattr(model, 'geom_name2id'):
-            model.geom_name2id = lambda name: name2id('geom', name)
-
-        if not hasattr(model, 'site_name2id'):
-            model.site_name2id = lambda name: name2id('site', name)
-
-        if not hasattr(model, 'joint_name2id'):
-            model.joint_name2id = lambda name: name2id('joint', name)
-
-        if not hasattr(model, 'actuator_name2id'):
-            model.actuator_name2id = lambda name: name2id('actuator', name)
-
-        if not hasattr(model, 'camera_name2id'):
-            model.camera_name2id = lambda name: name2id('camera', name)
-
-        if not hasattr(data, 'body_xpos'):
-            data.body_xpos = data.xpos
-
-        if not hasattr(data, 'body_xquat'):
-            data.body_xquat = data.xquat

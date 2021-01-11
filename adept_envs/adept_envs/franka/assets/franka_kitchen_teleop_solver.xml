@@ -16,7 +16,7 @@
 
     <size njmax='1000' nconmax='1000'/>
 
-    <include file="../../../../adept_models/scenes/basic_scene.xml"/>
+    <!-- <include file="../../../../adept_models/scenes/basic_scene.xml"/> -->
     <include file="../../../../third_party/franka/assets/assets.xml"/>
     <!-- <include file="../../../../third_party/franka/assets/actuator0.xml"/> -->
     <include file="../../../../third_party/franka/assets/teleop_actuator.xml"/>
@@ -33,13 +33,6 @@
     <quality shadowsize="4096" offsamples="8" />
     <map force="0.1" fogend="5" />
     </visual> -->
-
-    <!-- revert to defaults, see https://github.com/deepmind/dm_control/blob/30069ac11b60ee71acbd9159547d0bc334d63281/dm_control/_render/pyopengl/osmesa_renderer_test.py#L30 -->
-    <visual>
-    <global offwidth="640" offheight="480" />
-    <quality shadowsize="1024" offsamples="4" />
-    <!-- <map force="0.1" fogend="5" /> -->
-    </visual>
 
     <compiler inertiafromgeom='auto' inertiagrouprange='3 5' angle="radian"
               meshdir="../../../../adept_models/kitchen"
@@ -65,7 +58,7 @@
         <!-- Mocap -->
         <!-- <body name="vive_controller" mocap="true" pos="0 0 2.89" euler="-1.57 0 -.785"> -->
         <body name="vive_controller" mocap="true" pos="-0.440 -0.092 2.026" euler="-1.57 0 -.785">
-            <geom type="box" group="2" pos='0 0 .142' size="0.02 0.10 0.03" contype="0" conaffinity="0" rgba=".9 .7 .95 0" euler="0 0 -.785"/>
+            <geom type="box" group="2" pos='0 0 .142' size="0.02 0.10 0.03" contype="0" conaffinity="0" rgba=".9 .7 .95 0.5" euler="0 0 -.785"/>
         </body>
 
         <site name='target' pos='0 0 0' size='0.1' rgba='0 2 0 .2'/>
@@ -74,7 +67,7 @@
 
         <!-- Robot -->
         <body pos='0. 0 1.8' euler='0 0 1.57'>
-            <geom type='cylinder' size='.120 .90' pos='-.04 0 -0.90' class='panda_viz'/>
+            <!-- <geom type='cylinder' size='.120 .90' pos='-.04 0 -0.90' class='panda_viz'/> -->
             <include file="../../../../third_party/franka/assets/chain0.xml"/>
         </body>
 
