@@ -66,7 +66,8 @@ class KitchenV0(robot_env.RobotEnv):
         ctrl_mode='abs_vel',
         rot_use_euler=False,
         binary_gripper=False,
-        fix_gripper_quat=True,
+        fix_gripper_quat=False,
+        compensate_gravity=True,
     ):
         assert ctrl_mode in ['mocap', 'mocap_ik', 'abs_vel', 'rel_pos', 'ee_ik']
         # self.goal_concat = True
@@ -87,11 +88,19 @@ class KitchenV0(robot_env.RobotEnv):
         self.pos_range = 0.05 # limit maximum change in position
         self.rot_range = 0.05
 
+        # see https://github.com/ARISE-Initiative/robosuite/blob/e0982ca9000fd373bc60781ec9acd1ef29de5beb/robosuite/models/grippers/gripper_tester.py#L195
+        # https://github.com/deepmind/dm_control/blob/87e046bfeab1d6c1ffb40f9ee2a7459a38778c74/dm_control/locomotion/soccer/boxhead.py#L36
+        # http://www.mujoco.org/forum/index.php?threads/gravitational-matrix-calculation.3404/
+        # https://github.com/openai/mujoco-py/blob/4830435a169c1f3e3b5f9b58a7c3d9c39bdf4acb/mujoco_py/mjpid.pyx#L243
+        self.compensate_gravity = compensate_gravity
+
         self.fix_gripper_quat = fix_gripper_quat
         self.initial_mocap_quat = np.array([-0.65269804, 0.65364932, 0.27044485, 0.27127002])
 
         # with mocap_ik, we follow robogym and robosuite by spawning a separate simulator
         if self.ctrl_mode == 'mocap_ik':
+            self.pos_range = 0.075 # allow larger change
+            self.rot_range = 0.075
             self._create_solver_sim()
 
         super().__init__(
@@ -208,13 +217,21 @@ class KitchenV0(robot_env.RobotEnv):
         else:
             rot_a = quat2euler(a[3:7]) * self.rot_range
             gripper_a = np.sign(a[7]) if self.binary_gripper else a[7:9]
-        current_quat = self.sim.data.mocap_quat[self.mocapid, ...].copy()
-        new_quat = euler2quat(quat2euler(current_quat) + rot_a)
-        self.sim.data.mocap_quat[self.mocapid, ...] = new_quat.copy()
+
+        if self.fix_gripper_quat:
+            # fixed to initial
+            self.sim.data.mocap_quat[self.mocapid, ...] = self.initial_mocap_quat
+        else:
+            current_quat = self.sim.data.mocap_quat[self.mocapid, ...].copy()
+            new_quat = euler2quat(quat2euler(current_quat) + rot_a)
+            self.sim.data.mocap_quat[self.mocapid, ...] = new_quat.copy()
 
         # copy gripper joints into empty action and run
         ja = np.zeros(9, dtype=np.float)
         ja[:2] = gripper_a
+
+        if self.compensate_gravity:
+            self.sim.data.qfrc_applied[:9] = self.sim.data.qfrc_bias[:9]
 
         self.robot.step( # this will call mujoco_env.do_simulation, which should take the first model.nu == 2 indices of ja
             self, ja, step_duration=self.skip * self.model.opt.timestep, enforce_limits=False)
@@ -260,8 +277,10 @@ class KitchenV0(robot_env.RobotEnv):
         self.solver_sim.data.ctrl[:2] = gripper_a.copy()
         step_duration = self.skip * self.model.opt.timestep
         n_frames = int(step_duration/self.solver_sim.model.opt.timestep)
-        for _ in range(n_frames):
-            self.solver_sim.step()
+
+        with self.solver_sim.model.disable('gravity'):
+            for _ in range(n_frames):
+                self.solver_sim.step()
 
         # self.solver_sim_renderer.render_to_window()
 
@@ -269,8 +288,11 @@ class KitchenV0(robot_env.RobotEnv):
         ja = self.solver_sim.data.qpos[:self.N_DOF_ROBOT].copy()
         ja[7:9] = gripper_a
 
+        if self.compensate_gravity:
+            self.sim.data.qfrc_applied[:9] = self.sim.data.qfrc_bias[:9]
+
         self.robot.step(
-            self, ja, step_duration=self.skip * self.model.opt.timestep, mode='posact', enforce_limits=False)
+            self, ja, step_duration=self.skip * self.model.opt.timestep, mode='posact')
 
     def step_abs_vel(self, a, b=None):
         a = np.clip(a, -1.0, 1.0)
